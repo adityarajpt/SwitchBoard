@@ -60,6 +60,15 @@ Connect the phone with a data-capable USB cable, unlock it, open the USB notific
 
 Install Android SDK Platform-Tools (`adb`), enable **Developer options → USB debugging**, connect the phone, and approve this Mac’s RSA authorization prompt. Transfer Hub searches `PATH` and common Android SDK locations; use **Locate adb** if it is installed elsewhere. For wireless ADB, pair the Mac in **Developer options → Wireless debugging** while both devices are on the same local network.
 
+## Android transfer guides
+
+Step-by-step help for common Android-to-Mac and phone-to-phone workflows:
+
+- [How to transfer files from Android to Mac](docs/android-file-transfer-to-mac.md) — choose USB MTP, ADB, or Wi-Fi and move photos, videos, and other files.
+- [Android phone not showing on Mac over USB?](docs/android-mtp-not-working-on-mac.md) — troubleshoot the cable, USB mode, device discovery, and MTP helper.
+- [Transfer files from Android to Mac over Wi-Fi](docs/transfer-files-android-mac-wifi.md) — use the browser-based QR portal and fix same-network connection problems.
+- [Sync folders between Android devices](docs/sync-folders-between-android-devices.md) — configure a deliberate, preview-first folder sync through the Mac.
+
 ## Local Wi-Fi sharing and privacy
 
 Start **Shared → Start sharing** on the Mac, then scan the QR code with the phone camera. The phone and Mac must be connected to the same Wi-Fi network. Cellular data, guest networks, VPNs, firewalls, or router client isolation may block the connection. Received files are saved to `~/Downloads/Transfer Hub`.
@@ -83,4 +92,3 @@ On an Apple silicon Mac, run `./package-release.sh` to create a drag-to-Applicat
 ## Project status and limitations
 
 SwitchBoard is early access. A physical Android device is required to verify USB/MTP and ADB transfers; screenshots above show the interface, not a live phone session. MTP currently appears as one generic USB device because the helper does not expose a unique device serial. Sync compares paths, file sizes, and available modification times rather than hashing all content, so some same-size edits may not be detected. iOS support is limited to the browser portal for now.
-
