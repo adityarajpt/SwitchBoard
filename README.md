@@ -4,6 +4,8 @@ SwitchBoard is a native macOS app for browsing and transferring files between An
 
 > Early access: this is an unsigned-for-distribution, non-notarized build. macOS Gatekeeper may warn that Apple cannot verify the developer. Read [Installing the non-notarized build](#installing-the-non-notarized-build) before opening it.
 
+New to Android file transfers? Start with the [plain-English guide to moving photos and files from your phone to your Mac](docs/transfer-android-photos-to-mac-beginner.md)—no technical setup knowledge needed.
+
 ![SwitchBoard Transfer Hub showing source and destination endpoint selection on macOS](docs/images/transfer-endpoints.jpg)
 
 ## Screenshots
@@ -62,11 +64,13 @@ Install Android SDK Platform-Tools (`adb`), enable **Developer options → USB d
 
 ## Android transfer guides
 
-Step-by-step help for common Android-to-Mac and phone-to-phone workflows:
+Plain-English walkthroughs first, followed by more detailed help for specific connections:
 
-- [How to transfer files from Android to Mac](docs/android-file-transfer-to-mac.md) — choose USB MTP, ADB, or Wi-Fi and move photos, videos, and other files.
+- [Move photos and files from Android to Mac — beginner guide](docs/transfer-android-photos-to-mac-beginner.md) — simple cable instructions, what to tap, and where your files go.
+- [Send files without a cable — beginner Wi-Fi guide](docs/share-files-android-mac-without-cable-beginner.md) — scan a QR code and transfer through your phone's browser.
+- [How to transfer files from Android to Mac](docs/android-file-transfer-to-mac.md) — compare connection methods and learn about more options.
 - [Android phone not showing on Mac over USB?](docs/android-mtp-not-working-on-mac.md) — troubleshoot the cable, USB mode, device discovery, and MTP helper.
-- [Transfer files from Android to Mac over Wi-Fi](docs/transfer-files-android-mac-wifi.md) — use the browser-based QR portal and fix same-network connection problems.
+- [Transfer files from Android to Mac over Wi-Fi](docs/transfer-files-android-mac-wifi.md) — detailed same-network setup and troubleshooting.
 - [Sync folders between Android devices](docs/sync-folders-between-android-devices.md) — configure a deliberate, preview-first folder sync through the Mac.
 
 ## Local Wi-Fi sharing and privacy
