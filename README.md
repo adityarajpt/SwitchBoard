@@ -1,43 +1,85 @@
-# SwitchBoard
+# SwitchBoard — Android File Transfer for Mac
 
-SwitchBoard is a native macOS hub for moving files between this Mac and connected Android devices, with a browser-based local Wi-Fi bridge for phones and tablets. The app is currently named **Transfer Hub** in the UI.
+SwitchBoard is a native macOS app for browsing and transferring files between Android phones and a Mac. Connect over USB with MTP or ADB, move files between selected endpoints, and use a QR-based local Wi-Fi portal to exchange files with a phone or tablet browser. The current macOS app is named **Transfer Hub**.
 
-## Product direction
+> Early access: this is an unsigned-for-distribution, non-notarized build. macOS Gatekeeper may warn that Apple cannot verify the developer. Read [Installing the non-notarized build](#installing-the-non-notarized-build) before opening it.
 
-Transfer Hub is organized around **endpoints**, not around a single “current phone”: choose a source, choose a destination, then move files. With two authorized devices, the app suggests that pair; with more, the user chooses explicitly. Transfers between devices are staged through this Mac, recorded with both endpoints, and can be retried after reconnecting. Device profiles and activity are local to this Mac; clearing activity does not delete device files. Previously completed files are marked in the browser.
+![SwitchBoard Transfer Hub showing source and destination endpoint selection on macOS](docs/images/transfer-endpoints.jpg)
 
-The current pairing flow supports individual files between Android devices exposed through ADB or MTP, Mac↔device transfers, and manual folder sync between connected Android devices. Sync rules save a device pair, folder roots, and a per-pair baseline; each run scans both trees and requires a preview followed by explicit apply. One-way mode treats the source as authoritative but flags destination edits made since the baseline. Two-way mode routes a single-side edit to the other endpoint and offers an explicit keep-source/keep-destination choice when both changed. Deletions are never propagated, and background sync is off. iPhone currently participates through the local browser portal; direct iOS folder browsing/sync requires a separate iOS-compatible adapter and is not claimed by this build.
+## Screenshots
 
-Sync compares relative paths, file sizes, and modification times where the transport provides them; it does not hash every file, so same-size changes with unavailable/equal timestamps may not be detected. Keep the same pair/rule/preview model when adding an iOS adapter, while allowing each transport to declare its actual capabilities.
+Choose a source and destination explicitly. With multiple Android devices connected, SwitchBoard keeps the endpoints separate; transfers are staged through the Mac so they can be retried.
 
-ADB serials provide stable Android identities. The current OpenMTP helper does not expose a unique device serial through the integration, so MTP is represented as one remembered USB connection; switching between multiple MTP-only phones cannot yet be distinguished reliably. ADB can distinguish multiple connected Android devices. Activity and remembered profiles can be cleared/forgotten from the UI.
+![Android-to-Mac transfer workspace with source and destination selectors](docs/images/transfer-endpoints.jpg)
 
-## Current build
+The Shared page explains local-network access before the Wi-Fi portal starts. The Mac and phone must be on the same Wi-Fi network; guest Wi-Fi or router client isolation can prevent the connection.
 
-- Discovers Android devices over USB or wireless ADB and scans USB MTP storage.
-- Browses phone storage, queues transfers in either direction, and keeps transfer history across launches.
-- Resumes interrupted ADB file transfers from a temporary partial file, and retries Wi-Fi browser uploads from the last saved chunk.
-- Provides a QR-based local browser portal for Android and iOS: phones can upload to this Mac or download files selected for sharing.
-- Shows per-transfer progress and setup guidance for missing ADB, MTP, and Android Wireless Debugging.
-- Uses a platform-neutral connected-device model and separates the shared transfer queue from the Android connection methods, leaving room for additional device adapters.
-- The device browser supports current-folder search, multi-select, bulk download to a chosen folder, preview through Quick Look, copy/paste between phone folders, and file-URL clipboard exchange with Finder. Upload from Mac accepts multiple files in one selection.
-- Transfer history is stored locally, filterable by status, and recovers in-progress entries as retryable after an app restart.
+![SwitchBoard local Wi-Fi sharing screen with same-network guidance](docs/images/shared-wifi.jpg)
 
-The main navigation is **Transfer**, **Sync**, **Devices**, **Activity**, and **Shared**. The first-run screen leads with the straightforward USB option; developer-oriented ADB setup is under **More connection methods**. **Shared** explains local-network access before the portal is started and keeps the QR flow separate from device browsing. Appearance can follow macOS automatically or be set to Light or Dark.
+Screenshots show the app interface without a phone connected; hardware transfer behavior depends on the selected transport and device setup.
 
-ADB transfers require Android SDK Platform-Tools and USB debugging authorization. The app checks `PATH` and common macOS SDK locations for `adb`; if it is elsewhere, choose **Locate adb** in the app. Install Platform-Tools from Android Studio or the Android developer site, connect and unlock the phone, enable USB debugging, then approve the Mac's key on the phone. Wireless ADB requires pairing from Android's Wireless debugging settings; once paired, the app discovers the device.
+## Android file transfer features
 
-MTP uses the MIT-licensed OpenMTP command-line helper. `build-app.sh` bundles it from `/Applications/OpenMTP.app` when available; the helper is also detected from a standard OpenMTP installation at runtime. On Apple Silicon, the x86_64 helper requires Rosetta. MTP devices should be unlocked and in File transfer mode. MTP retries restart the current file because the helper does not expose a safe partial-file resume interface; queued jobs and their history remain available.
+- Browse Android shared storage over USB MTP or ADB, search folders, preview files with Quick Look, and select multiple files for bulk download.
+- Upload multiple Mac files, copy/paste files between phone folders where supported, and review per-device transfer history.
+- Retry interrupted transfers; ADB file transfers and browser uploads can resume from saved partial data where supported by their transport.
+- Move files between two connected Android endpoints. Transfers are staged through this Mac.
+- Create manual folder-sync rules for Android devices, preview planned changes, review conflicts, then apply deliberately. Background sync is off and deletions are not propagated.
+- Use the local Wi-Fi browser portal to upload selected phone files to the Mac or download files explicitly shared from the Mac. The portal requires no phone app and does not upload to a cloud service.
+- Choose Automatic, Light, or Dark appearance.
 
-The QR portal runs only after you start it in the app. It uses plain HTTP on your local network (port 8765 when available) with a temporary, unguessable URL token; use it only on a trusted network. Uploads are saved under `~/Downloads/Transfer Hub`. If the Mac firewall prompts, allow incoming connections. Phone-to-Mac uploads checkpoint in 1 MiB chunks and can resume when the same file is selected again in that phone browser.
+## Supported connection methods
 
-## Build and launch
+| Connection | What it supports | Notes |
+| --- | --- | --- |
+| USB MTP | Android file browsing, transfers, and folder sync | Unlock the phone and choose **File transfer** in its USB notification. The bundled OpenMTP helper may require Rosetta on Apple silicon. |
+| USB or wireless ADB | Android browsing, transfers, and folder sync | Install Android Platform-Tools. USB debugging must be enabled and this Mac authorized; wireless ADB must first be paired in Android Wireless debugging. |
+| Local Wi-Fi browser | Mac ↔ phone/tablet file exchange | Scan the QR code or open the link on a device on the **same Wi-Fi network**. This portal is not currently a paired endpoint for Android-to-Android transfer or folder sync. |
+| iPhone/iPad browser | Upload/download through the local Wi-Fi portal | Direct iOS storage browsing and folder sync are not supported by this build. |
 
-From this directory, run:
+## Download and install
+
+Download the latest build from [GitHub Releases](https://github.com/adityarajpt/SwitchBoard/releases/latest). This early-access release targets macOS 14 or later and is built for Apple silicon Macs.
+
+### Installing the non-notarized build
+
+This build is not signed with a Developer ID certificate and has not been notarized by Apple. Gatekeeper may show an “unidentified developer” or “Apple cannot check it for malicious software” warning. This warning is expected for this release; it is not an Apple security review. Only proceed if you downloaded the app from this project’s official Releases page and trust the source.
+
+1. Download and unzip `SwitchBoard-0.1.0-macOS-arm64.zip`.
+2. Move **Transfer Hub.app** to Applications (optional).
+3. Control-click the app in Finder, choose **Open**, then choose **Open** again in the confirmation dialog. You only need this override the first time.
+
+Do not disable Gatekeeper globally. A future distribution build can use Apple Developer ID signing and notarization to avoid this first-launch warning; those are not included here.
+
+## Android setup
+
+### USB file transfer with MTP
+
+Connect the phone with a data-capable USB cable, unlock it, open the USB notification, and select **File transfer**. In Transfer Hub, choose **Devices → Scan USB**. MTP does not require Android USB debugging. If MTP is not detected, try another cable/port and keep the phone unlocked.
+
+### Android Debug Bridge (ADB)
+
+Install Android SDK Platform-Tools (`adb`), enable **Developer options → USB debugging**, connect the phone, and approve this Mac’s RSA authorization prompt. Transfer Hub searches `PATH` and common Android SDK locations; use **Locate adb** if it is installed elsewhere. For wireless ADB, pair the Mac in **Developer options → Wireless debugging** while both devices are on the same local network.
+
+## Local Wi-Fi sharing and privacy
+
+Start **Shared → Start sharing** on the Mac, then scan the QR code with the phone camera. The phone and Mac must be connected to the same Wi-Fi network. Cellular data, guest networks, VPNs, firewalls, or router client isolation may block the connection. Received files are saved to `~/Downloads/Transfer Hub`.
+
+The portal is off until started and stops when you choose **Stop portal**. It uses a temporary tokenized HTTP address on the local network, not end-to-end encrypted HTTPS. Anyone who can access the temporary link while the portal is active may upload files or download files you explicitly shared. Use a trusted private network and stop the portal when finished. Transfers are local; this app does not send your files to a cloud service.
+
+## Build from source
+
+Requirements: Xcode Command Line Tools or Xcode, Swift 6, and macOS 14 or later. To build and launch:
 
 ```sh
+swift test
 ./build-app.sh
 open "Transfer Hub.app"
 ```
 
-The app targets macOS 14 or newer. The build creates a custom app icon. The generated app is ad-hoc signed for local use and is not notarized for distribution. A physical Android device is needed to verify USB/MTP behavior.
+`build-app.sh` creates the app icon and ad-hoc signs the app for local use. It does not perform Developer ID signing or notarization. If OpenMTP is installed at `/Applications/OpenMTP.app`, the build bundles its `mtp-cli` helper. Third-party notices are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+## Project status and limitations
+
+SwitchBoard is early access. A physical Android device is required to verify USB/MTP and ADB transfers; screenshots above show the interface, not a live phone session. MTP currently appears as one generic USB device because the helper does not expose a unique device serial. Sync compares paths, file sizes, and available modification times rather than hashing all content, so some same-size edits may not be detected. iOS support is limited to the browser portal for now.
+
