@@ -1,3 +1,4 @@
 .build/
 Transfer Hub.app/
+dist/
 .DS_Store

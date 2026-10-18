@@ -39,15 +39,14 @@ Screenshots show the app interface without a phone connected; hardware transfer 
 
 ## Download and install
 
-Download the latest build from [GitHub Releases](https://github.com/adityarajpt/SwitchBoard/releases/latest). This early-access release targets macOS 14 or later and is built for Apple silicon Macs.
+Download the latest build from [GitHub Releases](https://github.com/adityarajpt/SwitchBoard/releases/latest). Choose the `.dmg` disk image for the usual drag-to-Applications installation, or the `.zip` if you prefer to extract the app bundle yourself. These early-access builds target macOS 14 or later and Apple silicon Macs.
 
 ### Installing the non-notarized build
 
 This build is not signed with a Developer ID certificate and has not been notarized by Apple. Gatekeeper may show an “unidentified developer” or “Apple cannot check it for malicious software” warning. This warning is expected for this release; it is not an Apple security review. Only proceed if you downloaded the app from this project’s official Releases page and trust the source.
 
-1. Download and unzip `SwitchBoard-0.1.0-macOS-arm64.zip`.
-2. Move **Transfer Hub.app** to Applications (optional).
-3. Control-click the app in Finder, choose **Open**, then choose **Open** again in the confirmation dialog. You only need this override the first time.
+1. Download `SwitchBoard-0.1.0-macOS-arm64.dmg` and open it. Drag **Transfer Hub.app** to the Applications shortcut in the disk image. If you downloaded the `.zip`, extract it and move the app to Applications instead.
+2. Control-click **Transfer Hub.app** in Finder, choose **Open**, then choose **Open** again in the confirmation dialog. You only need this override the first time.
 
 Do not disable Gatekeeper globally. A future distribution build can use Apple Developer ID signing and notarization to avoid this first-launch warning; those are not included here.
 
@@ -69,7 +68,7 @@ The portal is off until started and stops when you choose **Stop portal**. It us
 
 ## Build from source
 
-Requirements: Xcode Command Line Tools or Xcode, Swift 6, and macOS 14 or later. To build and launch:
+Requirements: Xcode Command Line Tools or Xcode, Swift 6, and macOS 14 or later. To build and launch locally:
 
 ```sh
 swift test
@@ -78,6 +77,8 @@ open "Transfer Hub.app"
 ```
 
 `build-app.sh` creates the app icon and ad-hoc signs the app for local use. It does not perform Developer ID signing or notarization. If OpenMTP is installed at `/Applications/OpenMTP.app`, the build bundles its `mtp-cli` helper. Third-party notices are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+On an Apple silicon Mac, run `./package-release.sh` to create a drag-to-Applications `.dmg`, an app-bundle `.zip`, and SHA-256 checksums under `dist/`. These are real macOS app packages, not GitHub's automatically generated source-code archives. The app is ad-hoc signed and not notarized; GitHub release assets must be uploaded separately.
 
 ## Project status and limitations
 
