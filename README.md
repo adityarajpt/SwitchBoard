@@ -4,6 +4,8 @@ SwitchBoard is a native macOS app for browsing and transferring files between An
 
 > Early access: this is an unsigned-for-distribution, non-notarized build. macOS Gatekeeper may warn that Apple cannot verify the developer. Read [Installing the non-notarized build](#installing-the-non-notarized-build) before opening it.
 
+Visit the [SwitchBoard public website](https://adityarajpt.github.io/SwitchBoard/) for the beginner-friendly overview and visual guides.
+
 New to Android file transfers? Start with the [plain-English guide to moving photos and files from your phone to your Mac](docs/transfer-android-photos-to-mac-beginner.md)—no technical setup knowledge needed.
 
 ![SwitchBoard Transfer Hub showing source and destination endpoint selection on macOS](docs/images/transfer-endpoints.jpg)
