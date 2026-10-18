@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 13199)
-Total output lines: 979
-
 import AppKit
 import Foundation
 
@@ -355,7 +352,277 @@ final class HubModel: ObservableObject {
             guard visited.insert(folder).inserted else { continue }
             for file in try await listRemoteFiles(device, path: folder) {
                 let relative = String(file.path.dropFirst(root == "/" ? 1 : root.count + 1))
-                guard !relative.isEmpty, !relative.split(separator: "/")…3199 tokens truncated… try await adb.listFiles(serial: destination.serial, path: targetFolder)
+                guard !relative.isEmpty, !relative.split(separator: "/").contains("..") else { continue }
+                var size = file.size ?? 0
+                var modifiedAt = file.modifiedAt
+                if !file.isDirectory, device.transport == .adb,
+                   let metadata = try? await adb.fileModifiedAt(serial: device.serial, path: file.path) {
+                    size = metadata.size
+                    modifiedAt = metadata.modifiedAt
+                }
+                result.append(SyncManifestEntry(relativePath: relative, isDirectory: file.isDirectory, size: size, modifiedAt: modifiedAt))
+                if file.isDirectory { pending.append(file.path) }
+            }
+        }
+        return result
+    }
+
+    private func listRemoteFiles(_ device: ConnectedDevice, path: String) async throws -> [PhoneFile] {
+        if device.transport == .mtp {
+            guard let storageID = mtpStorages.first?.id else { throw MTPError.noDevice }
+            return try await mtp.listFiles(storageID: storageID, path: path)
+        }
+        return try await adb.listFiles(serial: device.serial, path: path)
+    }
+
+    private func makeDirectory(on device: ConnectedDevice, path: String) async throws {
+        if device.transport == .mtp {
+            guard let storageID = mtpStorages.first?.id else { throw MTPError.noDevice }
+            try await mtp.makeDirectory(storageID: storageID, path: path)
+        } else {
+            try await adb.makeDirectory(serial: device.serial, path: path)
+        }
+    }
+
+    private func syncCopyFile(rule: SyncRule, relativePath: String, from source: ConnectedDevice, to destination: ConnectedDevice, sourcePath: String, destinationPath: String, name: String) async throws {
+        let staging = FileManager.default.temporaryDirectory.appendingPathComponent("TransferHubSync-\(UUID().uuidString)-\(name)")
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var record = TransferRecord(name: name, direction: .betweenDevices, deviceSerial: source.serial, localPath: staging.path, remotePath: sourcePath, transport: source.transport, storageID: source.transport == .mtp ? mtpStorages.first?.id : nil, state: .running, detail: "Syncing folder pair")
+        record.sourcePath = sourcePath
+        record.destinationDeviceSerial = destination.serial
+        record.destinationTransport = destination.transport
+        record.destinationStorageID = destination.transport == .mtp ? mtpStorages.first?.id : nil
+        record.destinationPath = destinationPath
+        record.syncRuleID = rule.id
+        record.syncRelativePath = relativePath
+        transfers.insert(record, at: 0)
+        persistTransfers()
+        do {
+            if source.transport == .mtp {
+                guard let storageID = mtpStorages.first?.id else { throw MTPError.noDevice }
+                try await mtp.download(storageID: storageID, remotePath: sourcePath, localPath: staging.path)
+            } else {
+                try await adb.pullResumable(serial: source.serial, remotePath: sourcePath, localPath: staging.path, jobID: record.id.uuidString) { _, _ in }
+            }
+            let parent = (destinationPath as NSString).deletingLastPathComponent
+            if destination.transport == .mtp {
+                guard let storageID = mtpStorages.first?.id else { throw MTPError.noDevice }
+                try await mtp.upload(storageID: storageID, localPath: staging.path, remoteDirectory: parent)
+            } else {
+                try await adb.pushResumable(serial: destination.serial, localPath: staging.path, remotePath: destinationPath, jobID: record.id.uuidString) { _, _ in }
+            }
+            update(id: record.id, state: .complete, detail: "Synced from \(displayName(for: source.id)) to \(displayName(for: destination.id))")
+        } catch {
+            update(id: record.id, state: .failed, detail: "Sync stopped: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    func selectDevice(_ device: ConnectedDevice) async {
+        selectedDeviceID = device.id
+        transferSourceDeviceID = device.id
+        currentPath = device.transport == .mtp ? "/" : "/sdcard"
+        await loadFiles()
+    }
+
+    func chooseTransferSource(_ deviceID: String?) { transferSourceDeviceID = deviceID }
+    func chooseTransferDestination(_ deviceID: String?) { selectedDestinationDeviceID = deviceID }
+
+    func scanMTP() async {
+        guard mtpAvailable else {
+            errorMessage = "MTP helper is not bundled. Rebuild the app with OpenMTP installed."
+            return
+        }
+        await refreshDevices(includeMTP: true)
+        if let mtpDevice = devices.first(where: { $0.transport == .mtp }) {
+            await selectDevice(mtpDevice)
+        }
+    }
+
+    func startWiFiPortal() {
+        do {
+            try wifiPortal.start()
+            updateWiFiPortalState()
+            Task { @MainActor [weak self] in
+                while let self, self.wifiPortal.isStarting || self.wifiPortal.isRunning {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    self.updateWiFiPortalState()
+                }
+            }
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    func stopWiFiPortal() {
+        wifiPortal.stop()
+        updateWiFiPortalState()
+    }
+
+    func addFilesToWiFiOutbox() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.prompt = "Share with phone"
+        guard panel.runModal() == .OK else { return }
+        do { try wifiPortal.addOutboxFiles(panel.urls) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func updateWiFiPortalState() {
+        wifiActive = wifiPortal.isRunning
+        wifiAddress = wifiPortal.address
+        wifiQRImage = wifiPortal.qrImage
+        if let error = wifiPortal.lastError {
+            errorMessage = error
+            wifiPortal.clearError()
+        }
+    }
+
+    func selectStorage(_ storage: MTPStorage) async {
+        selectedStorageID = storage.id
+        currentPath = "/"
+        await loadFiles()
+    }
+
+    func loadFiles() async {
+        guard let device = selectedDevice, device.isAuthorized else { files = []; return }
+        await loadFiles(for: device.id)
+    }
+
+    private func loadFiles(for deviceID: String) async {
+        guard let device = devices.first(where: { $0.id == deviceID }), device.isAuthorized else { return }
+        isLoadingFiles = true
+        defer { isLoadingFiles = false }
+        do {
+            let loadedFiles: [PhoneFile]
+            if device.transport == .mtp {
+                guard let selectedStorageID else { files = []; return }
+                loadedFiles = try await mtp.listFiles(storageID: selectedStorageID, path: currentPath)
+            } else {
+                loadedFiles = try await adb.listFiles(serial: device.serial, path: currentPath)
+            }
+            guard selectedDeviceID == deviceID else { return }
+            files = loadedFiles
+            errorMessage = nil
+        } catch {
+            guard selectedDeviceID == deviceID else { return }
+            errorMessage = error.localizedDescription
+            files = []
+        }
+        if selectedDeviceID == deviceID { isLoadingFiles = false }
+    }
+
+    func open(_ file: PhoneFile) async {
+        guard file.isDirectory else { return }
+        currentPath = file.path
+        await loadFiles()
+    }
+
+    func goUp() async {
+        guard currentPath != "/" else { return }
+        currentPath = (currentPath as NSString).deletingLastPathComponent
+        if currentPath.isEmpty { currentPath = "/" }
+        await loadFiles()
+    }
+
+    func sendFiles() {
+        guard let device = selectedDevice, device.isAuthorized else { errorMessage = "Unlock and authorize the Android device first."; return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = device.transport == .adb
+        panel.canChooseFiles = true
+        panel.prompt = "Upload selected files"
+        panel.message = "Choose one or more files to add to the transfer queue."
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            let remote = (currentPath as NSString).appendingPathComponent(url.lastPathComponent)
+            enqueue(name: url.lastPathComponent, direction: .toPhone, device: device, local: url.path, remote: remote)
+        }
+        runQueuedTransfers()
+    }
+
+    func sendMacFiles(to device: ConnectedDevice) async {
+        guard device.isAuthorized else { errorMessage = "Unlock and authorize the Android device first."; return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.prompt = "Send to device"
+        guard panel.runModal() == .OK else { return }
+        let folder = device.transport == .mtp ? "/" : "/sdcard/Download"
+        do {
+            let occupiedItems: [PhoneFile]
+            if device.transport == .mtp {
+                guard let selectedStorageID else { throw MTPError.noDevice }
+                occupiedItems = try await mtp.listFiles(storageID: selectedStorageID, path: folder)
+            } else {
+                occupiedItems = try await adb.listFiles(serial: device.serial, path: folder)
+            }
+            var occupied = Set(occupiedItems.map(\.name))
+            for url in panel.urls {
+                let name = uniqueRemoteName(url.lastPathComponent, occupied: occupied)
+                occupied.insert(name)
+                enqueue(name: name, direction: .toPhone, device: device, local: url.path, remote: (folder as NSString).appendingPathComponent(name))
+            }
+            runQueuedTransfers()
+        } catch {
+            errorMessage = "Could not prepare the destination folder: \(error.localizedDescription)"
+        }
+    }
+
+    func receive(_ file: PhoneFile) {
+        guard let device = selectedDevice, device.isAuthorized else { return }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = file.name
+        panel.prompt = "Save from phone"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        enqueue(name: file.name, direction: .fromPhone, device: device, local: url.path, remote: file.path)
+        runQueuedTransfers()
+    }
+
+    func receive(_ selectedFiles: [PhoneFile]) {
+        let files = selectedFiles.filter { !$0.isDirectory }
+        guard !files.isEmpty, let device = selectedDevice, device.isAuthorized else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Save selected files"
+        panel.message = "Choose a folder. Existing files are kept; duplicates get a numbered name."
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        for file in files {
+            let destination = uniqueLocalURL(in: folder, name: file.name)
+            enqueue(name: file.name, direction: .fromPhone, device: device, local: destination.path, remote: file.path)
+        }
+        runQueuedTransfers()
+    }
+
+    func transferSelectedFiles(_ selectedFiles: [PhoneFile], to destination: ConnectedDevice) async {
+        guard let source = selectedDevice, source.isAuthorized, destination.isAuthorized,
+              source.id != destination.id else {
+            errorMessage = "Choose two different connected devices to transfer between them."
+            return
+        }
+        let candidates = selectedFiles.filter { !$0.isDirectory }
+        guard !candidates.isEmpty else { return }
+        let targetStorage = destination.transport == .mtp ? mtpStorages.first?.id : nil
+        guard destination.transport != .mtp || targetStorage != nil else {
+            errorMessage = "No writable MTP storage was found on the destination."
+            return
+        }
+        let stagingDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TransferHub-Staging", isDirectory: true)
+        do { try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true) }
+        catch { errorMessage = error.localizedDescription; return }
+        let targetFolder = destination.transport == .mtp ? "/" : "/sdcard/Download"
+        let occupied: Set<String>
+        do {
+            let targetItems: [PhoneFile]
+            if destination.transport == .mtp {
+                guard let targetStorage else { throw MTPError.noDevice }
+                targetItems = try await mtp.listFiles(storageID: targetStorage, path: targetFolder)
+            } else {
+                targetItems = try await adb.listFiles(serial: destination.serial, path: targetFolder)
             }
             occupied = Set(targetItems.map(\.name))
         } catch {

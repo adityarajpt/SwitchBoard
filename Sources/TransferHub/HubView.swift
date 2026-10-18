@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 16617)
-Total output lines: 962
-
 import SwiftUI
 import QuickLook
 
@@ -330,7 +327,362 @@ struct HubView: View {
     }
 
     private func syncRuleCard(_ rule: SyncRule) -> some View {
-        let isActive = mode…6617 tokens truncated…edium))
+        let isActive = model.activeSyncRuleID == rule.id
+        let plan = isActive ? model.syncPlan : []
+        let conflictPaths = Set(plan.filter { $0.action == .conflict }.map(\.relativePath))
+        let chosenConflicts = conflictPaths.filter { model.syncConflictChoices[$0] != nil }.count
+        let actionable = plan.filter { $0.action != .conflict }.count + chosenConflicts
+        let conflictCount = conflictPaths.count - chosenConflicts
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(HubPalette.lime).padding(.top, 2)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("\(model.displayName(for: rule.sourceDeviceID)) → \(model.displayName(for: rule.destinationDeviceID))")
+                        .font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                    Text("\(rule.sourceRoot)  →  \(rule.destinationRoot)").font(.system(size: 10, design: .monospaced)).foregroundStyle(HubPalette.muted).lineLimit(1)
+                    Text(rule.mode.rawValue + (rule.mode == .oneWay ? " · source authoritative" : " · conflicting edits are skipped"))
+                        .font(.system(size: 9)).foregroundStyle(HubPalette.muted)
+                }
+                Spacer(minLength: 8)
+                Button { Task { await model.previewSync(rule) } } label: {
+                    Label(model.isSyncing && isActive ? "Working…" : "Preview", systemImage: "eye")
+                }.buttonStyle(.bordered).tint(HubPalette.lime).disabled(model.isSyncing)
+                Button { model.deleteSyncRule(rule) } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundStyle(HubPalette.muted).help("Delete saved rule")
+            }
+            if isActive, let syncMessage = model.syncMessage {
+                Text(syncMessage).font(.system(size: 10, weight: .medium)).foregroundStyle(conflictCount > 0 ? .orange : HubPalette.muted)
+                if !plan.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(plan) { item in
+                            HStack(spacing: 9) {
+                                Image(systemName: syncActionIcon(item.action)).foregroundStyle(item.action == .conflict ? .orange : HubPalette.lime).frame(width: 15)
+                                Text(item.relativePath).font(.system(size: 10, design: .monospaced)).lineLimit(1)
+                                Spacer()
+                                Text(item.reason).font(.system(size: 9)).foregroundStyle(item.action == .conflict ? .orange : HubPalette.muted).lineLimit(1)
+                                if item.action == .conflict, item.reason.hasPrefix("Both sides") || item.reason.hasPrefix("Destination changed") {
+                                    Button(model.syncConflictChoices[item.relativePath] == .copyToDestination ? "✓ Use source" : "Use source") {
+                                        model.chooseSyncConflict(item.relativePath, action: .copyToDestination)
+                                    }.font(.system(size: 9, weight: .medium)).buttonStyle(.plain).foregroundStyle(HubPalette.lime)
+                                    Button(model.syncConflictChoices[item.relativePath] == .copyToSource ? "✓ Use destination" : "Use destination") {
+                                        model.chooseSyncConflict(item.relativePath, action: .copyToSource)
+                                    }.font(.system(size: 9, weight: .medium)).buttonStyle(.plain).foregroundStyle(HubPalette.lime)
+                                }
+                            }.padding(.vertical, 7)
+                            if item.id != plan.last?.id { Rectangle().fill(HubPalette.line).frame(height: 1) }
+                        }
+                    }.padding(.horizontal, 10).background(HubPalette.panelRaised.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+                }
+                HStack {
+                    if conflictCount > 0 { Label("\(conflictCount) conflict\(conflictCount == 1 ? "" : "s") will be left untouched", systemImage: "exclamationmark.triangle").font(.system(size: 9)).foregroundStyle(.orange) }
+                    Spacer()
+                    Button { showSyncApplyConfirmation = true } label: {
+                        Label("Apply \(actionable) safe change\(actionable == 1 ? "" : "s")", systemImage: "checkmark")
+                    }.buttonStyle(.borderedProminent).tint(HubPalette.lime).foregroundStyle(HubPalette.background)
+                        .disabled(actionable == 0 || model.isSyncing)
+                }
+            }
+        }.padding(14).background(HubPalette.panel, in: RoundedRectangle(cornerRadius: 11)).overlay(RoundedRectangle(cornerRadius: 11).stroke(HubPalette.line, lineWidth: 1))
+    }
+
+    private func syncActionIcon(_ action: SyncPlanAction) -> String {
+        return switch action {
+        case .copyToDestination, .createDestinationFolder: "arrow.right.to.line"
+        case .copyToSource, .createSourceFolder: "arrow.left.to.line"
+        case .conflict: "exclamationmark.triangle"
+        }
+    }
+
+    private func endpointCard(title: String, device: ConnectedDevice?, isSource: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.system(size: 9, weight: .bold)).tracking(1).foregroundStyle(HubPalette.muted)
+            Menu {
+                Button("This Mac") {
+                    if isSource { model.chooseTransferSource(nil) } else { model.chooseTransferDestination(nil) }
+                }
+                ForEach(model.devices) { candidate in
+                    Button("\(candidate.model) · \(candidate.link.rawValue)") {
+                        if isSource { model.chooseTransferSource(candidate.id) }
+                        else { model.chooseTransferDestination(candidate.id) }
+                    }.disabled(candidate.id == (isSource ? model.selectedDestinationDeviceID : model.transferSourceDeviceID))
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: device == nil ? "laptopcomputer" : "iphone.gen3")
+                        .font(.system(size: 17)).foregroundStyle(HubPalette.lime).frame(width: 37, height: 37).background(HubPalette.lime.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(device.map { model.displayName(for: $0.id) } ?? "This Mac").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Text(device.map { "Connected · \($0.link.rawValue)" } ?? "Local files").font(.system(size: 10)).foregroundStyle(HubPalette.muted)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(HubPalette.muted)
+                }
+                .padding(13).frame(maxWidth: .infinity, alignment: .leading).background(HubPalette.panelRaised, in: RoundedRectangle(cornerRadius: 10))
+            }.menuStyle(.borderlessButton)
+        }.padding(15).frame(maxWidth: .infinity, alignment: .leading).background(HubPalette.panel, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(HubPalette.line, lineWidth: 1))
+    }
+
+    private var rememberedDevicesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DEVICE HISTORY").font(.system(size: 10, weight: .bold)).tracking(1).foregroundStyle(HubPalette.muted)
+            ForEach(model.rememberedDevices) { remembered in rememberedDeviceRow(remembered) }
+        }
+    }
+
+    private func rememberedDeviceRow(_ remembered: RememberedDevice) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: model.devices.contains(where: { $0.id == remembered.id }) ? "iphone.gen3" : "iphone.slash")
+                .foregroundStyle(model.devices.contains(where: { $0.id == remembered.id }) ? HubPalette.lime : HubPalette.muted)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(remembered.displayName).font(.system(size: 11, weight: .medium))
+                Text(model.devices.contains(where: { $0.id == remembered.id }) ? "Connected now" : "Last seen \(remembered.lastSeenAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.system(size: 9)).foregroundStyle(HubPalette.muted)
+            }
+            Spacer()
+            Text("\(model.transferCount(for: remembered.id)) transfers").font(.system(size: 9)).foregroundStyle(HubPalette.muted)
+            Button { model.forgetDevice(remembered.id) } label: { Image(systemName: "minus.circle").foregroundStyle(HubPalette.muted) }.buttonStyle(.plain).help("Forget this device")
+        }.padding(10).background(HubPalette.panelRaised.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var deviceHeader: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("CONNECTED DEVICES").font(.system(size: 10, weight: .bold)).tracking(1.1).foregroundStyle(HubPalette.muted)
+                Text(model.devices.isEmpty ? "No device connected yet" : "\(model.devices.count) device\(model.devices.count == 1 ? "" : "s") ready")
+                    .font(.system(size: 16, weight: .medium))
+            }
+            Spacer()
+            if selection == "device", !model.devices.isEmpty {
+                Menu {
+                    ForEach(model.devices) { device in
+                        Button {
+                            Task { await model.selectDevice(device) }
+                        } label: {
+                            Label("\(device.model) · \(device.link.rawValue)", systemImage: device.isAuthorized ? "checkmark.circle" : "exclamationmark.circle")
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Text(model.selectedDevice?.model ?? "Choose device")
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                    }.font(.system(size: 12, weight: .medium)).padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(HubPalette.panel, in: RoundedRectangle(cornerRadius: 8))
+                }.menuStyle(.borderlessButton)
+            }
+        }
+    }
+
+    private var transportSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CONNECTION OPTIONS").font(.system(size: 10, weight: .bold)).tracking(1.1).foregroundStyle(HubPalette.muted)
+                    Text("Start simple. You can change methods any time.").font(.system(size: 10)).foregroundStyle(HubPalette.muted.opacity(0.85))
+                }
+                Spacer()
+                Button { Task { await model.scanMTP() } } label: {
+                    Label(model.isScanning ? "Looking…" : "Scan USB", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(HubPalette.lime, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(HubPalette.background)
+                }.buttonStyle(.plain).disabled(model.isScanning)
+            }
+            HStack(spacing: 12) {
+                methodCard(title: "USB cable", subtitle: "Recommended · no debugging setup", icon: "cable.connector", tint: HubPalette.lime, actionTitle: "Scan for phone", action: { Task { await model.scanMTP() } })
+                methodCard(title: "Wi-Fi sharing", subtitle: "Use your phone's browser · no install", icon: "qrcode", tint: .orange, actionTitle: model.wifiActive ? "Portal is on" : "Set up sharing", action: { selection = "shared" })
+            }
+            DisclosureGroup(isExpanded: $showAdvancedConnections) {
+                HStack(spacing: 12) {
+                    methodCard(title: "Android debugging", subtitle: model.adbAvailable ? "Available on this Mac" : "Optional · requires Platform-Tools", icon: "hammer", tint: .purple, actionTitle: model.adbAvailable ? "Wireless setup" : "Set up ADB", action: { showWiFiInfo = true })
+                    Spacer(minLength: 0)
+                }.padding(.top, 10)
+            } label: {
+                Label("More connection methods", systemImage: "slider.horizontal.3").font(.system(size: 11, weight: .medium)).foregroundStyle(HubPalette.text.opacity(0.88))
+            }
+            .tint(HubPalette.muted)
+            .padding(13).background(HubPalette.panel, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func methodCard(title: String, subtitle: String, icon: String, tint: Color, actionTitle: String, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(tint).frame(width: 31, height: 31).background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 12, weight: .semibold))
+                    Text(subtitle).font(.system(size: 10)).foregroundStyle(HubPalette.muted).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            Button(action: action) { Text(actionTitle).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint) }.buttonStyle(.plain)
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(HubPalette.panel, in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(HubPalette.line, lineWidth: 1))
+    }
+
+    private func browserSection(_ device: ConnectedDevice) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("DEVICE STORAGE").font(.system(size: 10, weight: .bold)).tracking(1.1).foregroundStyle(HubPalette.muted)
+                    HStack(spacing: 6) {
+                        Text(device.model).font(.system(size: 16, weight: .semibold))
+                        Text("·  \(device.serial)").font(.system(size: 11, design: .monospaced)).foregroundStyle(HubPalette.muted)
+                    }
+                }
+                Spacer()
+                Menu {
+                    Button("Use this folder as sync source") {
+                        model.chooseTransferSource(device.id)
+                        sourceSyncRoot = model.currentPath
+                        selection = "sync"
+                    }
+                    Button("Use this folder as sync destination") {
+                        model.chooseTransferDestination(device.id)
+                        destinationSyncRoot = model.currentPath
+                        selection = "sync"
+                    }
+                } label: {
+                    Label("Use for sync", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 10, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(HubPalette.panelRaised, in: RoundedRectangle(cornerRadius: 7))
+                }.menuStyle(.borderlessButton)
+                Button { model.pasteFromMacClipboard() } label: {
+                    Label("Paste from Mac", systemImage: "clipboard")
+                        .font(.system(size: 10, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(HubPalette.panelRaised, in: RoundedRectangle(cornerRadius: 7)).foregroundStyle(HubPalette.text.opacity(0.9))
+                }.buttonStyle(.plain).help("Upload files copied in Finder")
+                Button { model.sendFiles() } label: {
+                    Label("Upload files", systemImage: "arrow.up.to.line")
+                        .font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(HubPalette.lime, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(HubPalette.background)
+                }.buttonStyle(.plain).help("Choose one or more files from this Mac to upload")
+            }
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Button { Task { await model.goUp() } } label: { Image(systemName: "arrow.left").font(.system(size: 11, weight: .semibold)).frame(width: 28, height: 27).background(HubPalette.panelRaised, in: RoundedRectangle(cornerRadius: 6)) }.buttonStyle(.plain)
+                    Image(systemName: "folder").foregroundStyle(HubPalette.lime).font(.system(size: 12))
+                    Text(model.currentPath).font(.system(size: 11, design: .monospaced)).foregroundStyle(HubPalette.muted)
+                    Spacer()
+                    if model.selectedDevice?.transport == .mtp, model.mtpStorages.count > 1 {
+                        Menu {
+                            ForEach(model.mtpStorages) { storage in
+                                Button(storage.name) { Task { await model.selectStorage(storage) } }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(model.mtpStorages.first(where: { $0.id == model.selectedStorageID })?.name ?? "Storage")
+                                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                            }.font(.system(size: 10, weight: .medium)).foregroundStyle(HubPalette.text.opacity(0.9))
+                        }.menuStyle(.borderlessButton)
+                    }
+                    Text("\(visibleFiles.count) ITEMS").font(.system(size: 9, weight: .bold)).tracking(0.7).foregroundStyle(HubPalette.muted)
+                }.padding(10).background(HubPalette.panelRaised.opacity(0.7))
+                HStack(spacing: 9) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(HubPalette.muted)
+                    TextField("Search this folder", text: $searchText).textFieldStyle(.plain).font(.system(size: 11))
+                    if !searchText.isEmpty {
+                        Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(HubPalette.muted) }.buttonStyle(.plain)
+                    }
+                    Button(selectedFileIDs.count == visibleFiles.filter({ !$0.isDirectory }).count ? "Deselect all" : "Select all") {
+                        let ids = Set(visibleFiles.filter { !$0.isDirectory }.map(\.id))
+                        if selectedFileIDs.isSuperset(of: ids) { selectedFileIDs.subtract(ids) }
+                        else { selectedFileIDs.formUnion(ids) }
+                    }.font(.system(size: 10, weight: .medium)).buttonStyle(.plain).foregroundStyle(HubPalette.lime)
+                }.padding(.horizontal, 11).padding(.vertical, 9).background(HubPalette.panelRaised.opacity(0.45))
+                if !selectedFiles.isEmpty || (!copiedFilePaths.isEmpty && copiedDeviceID == model.selectedDeviceID && copiedStorageID == model.selectedStorageID) {
+                    HStack(spacing: 10) {
+                        if !selectedFiles.isEmpty {
+                            Text("\(selectedFiles.count) selected").font(.system(size: 10, weight: .semibold)).foregroundStyle(HubPalette.text)
+                        } else {
+                            Text("Copied \(copiedFilePaths.count) file\(copiedFilePaths.count == 1 ? "" : "s")").font(.system(size: 10, weight: .semibold)).foregroundStyle(HubPalette.text)
+                        }
+                        Spacer()
+                        if !selectedFiles.isEmpty {
+                            Button { copiedFilePaths = selectedFiles.map(\.path); copiedDeviceID = model.selectedDeviceID; copiedStorageID = model.selectedStorageID } label: { Label("Copy files", systemImage: "doc.on.doc") }
+                                .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(HubPalette.text.opacity(0.9))
+                            Button { Task { await model.copyToMacClipboard(selectedFiles) } } label: { Label("Copy to Mac", systemImage: "laptopcomputer.and.arrow.down") }
+                                .buttonStyle(.plain).font(.system(size: 10, weight: .medium)).foregroundStyle(HubPalette.text.opacity(0.9))
+                        }
+                        if !copiedFilePaths.isEmpty, copiedDeviceID == model.selectedDeviceID, copiedStorageID == model.selectedStorageID {
+                            Button { Task { await model.copyOnDevice(paths: copiedFilePaths) } } label: { Label("Paste here", systemImage: "clipboard") }
+                                .buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundStyle(HubPalette.lime)
+                        }
+                        if !selectedFiles.isEmpty {
+                            Button { model.receive(selectedFiles); selectedFileIDs.removeAll() } label: { Label("Save selected", systemImage: "arrow.down.to.line") }
+                                .buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundStyle(HubPalette.lime)
+                            if let destinationDevice, destinationDevice.id != model.transferSourceDeviceID {
+                                Button {
+                                    Task {
+                                        await model.transferSelectedFiles(selectedFiles, to: destinationDevice)
+                                        selectedFileIDs.removeAll()
+                                    }
+                                } label: { Label("Send to \(model.displayName(for: destinationDevice.id))", systemImage: "arrow.right.to.line") }
+                                    .buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundStyle(HubPalette.lime)
+                            } else if destinationDevice == nil {
+                                Button { model.receive(selectedFiles); selectedFileIDs.removeAll() } label: {
+                                    Label("Save to Mac", systemImage: "arrow.down.to.line")
+                                }.buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundStyle(HubPalette.lime)
+                            }
+                            Button { selectedFileIDs.removeAll() } label: { Image(systemName: "xmark") }
+                                .buttonStyle(.plain).foregroundStyle(HubPalette.muted).help("Clear selection")
+                        }
+                        if let notice = model.clipboardNotice {
+                            Text(notice).font(.system(size: 9)).foregroundStyle(HubPalette.muted).lineLimit(1)
+                        }
+                    }.padding(.horizontal, 12).padding(.vertical, 9).background(HubPalette.lime.opacity(0.07))
+                }
+                if model.isLoadingFiles {
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(28)
+                } else if visibleFiles.isEmpty {
+                    VStack(spacing: 7) {
+                        Image(systemName: searchText.isEmpty ? "folder" : "magnifyingglass").font(.system(size: 20)).foregroundStyle(HubPalette.muted)
+                        Text(searchText.isEmpty ? "This folder is empty" : "No matches in this folder").font(.system(size: 12)).foregroundStyle(HubPalette.muted)
+                    }.frame(maxWidth: .infinity).padding(25)
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(visibleFiles) { file in
+                            fileRow(file)
+                            if file.id != visibleFiles.last?.id { Rectangle().fill(HubPalette.line).frame(height: 1).padding(.leading, 42) }
+                        }
+                    }
+                }
+            }
+            .background(HubPalette.panel, in: RoundedRectangle(cornerRadius: 11))
+            .overlay(RoundedRectangle(cornerRadius: 11).stroke(HubPalette.line, lineWidth: 1))
+        }
+    }
+
+    private func fileRow(_ file: PhoneFile) -> some View {
+        HStack(spacing: 11) {
+            if !file.isDirectory {
+                Button {
+                    if selectedFileIDs.contains(file.id) { selectedFileIDs.remove(file.id) }
+                    else { selectedFileIDs.insert(file.id) }
+                } label: {
+                    Image(systemName: selectedFileIDs.contains(file.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 14)).foregroundStyle(selectedFileIDs.contains(file.id) ? HubPalette.lime : HubPalette.muted)
+                }.buttonStyle(.plain).help("Select \(file.name)")
+            } else {
+                Color.clear.frame(width: 14, height: 14)
+            }
+            Image(systemName: file.isDirectory ? "folder.fill" : fileIcon(file.name))
+                .font(.system(size: 14)).foregroundStyle(file.isDirectory ? HubPalette.lime : Color(red: 0.48, green: 0.67, blue: 0.94)).frame(width: 23)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(file.isDirectory ? "Folder" : formattedSize(file.size)).font(.system(size: 10)).foregroundStyle(HubPalette.muted)
+            }
+            Spacer()
+            if !file.isDirectory {
+                if let device = model.selectedDevice, model.wasTransferredBefore(file, on: device) {
+                    Label("Moved before", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 9, weight: .medium)).foregroundStyle(HubPalette.lime)
+                        .help("A completed transfer for this file is in Activity")
+                }
+                Button { Task { await model.preview(file) } } label: {
+                    Image(systemName: "eye").font(.system(size: 10, weight: .medium)).padding(7).background(HubPalette.panelRaised, in: RoundedRectangle(cornerRadius: 6))
+                }.buttonStyle(.plain).help("Preview \(file.name)")
+                Button { model.receive(file) } label: {
+                    Label("Save to Mac", systemImage: "arrow.down.to.line").font(.system(size: 10, weight: .medium))
                         .padding(.horizontal, 9).padding(.vertical, 6).background(HubPalette.panelRaised, in: RoundedRectangle(cornerRadius: 6))
                 }.buttonStyle(.plain)
             }
